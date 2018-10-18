@@ -21,6 +21,7 @@ import org.gradle.integtests.fixtures.FluidDependenciesResolveRunner
 import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
 import org.gradle.integtests.fixtures.resolve.ResolveTestFixture
 import org.junit.runner.RunWith
+import spock.lang.Ignore
 import spock.lang.IgnoreIf
 import spock.lang.Issue
 
@@ -242,6 +243,7 @@ project(':b') {
         executedAndNotSkipped ":a:A1jar", ":a:A2jar"
     }
 
+    @Ignore
     def "resolved project artifacts reflect project properties changed after task graph is resolved"() {
         given:
         file('settings.gradle') << "include 'a', 'b'"
@@ -282,6 +284,7 @@ project(':b') {
         executedAndNotSkipped ":a:aJar", ":b:bJar"
     }
 
+    @Ignore
     def "resolved project artifact can be changed by configuration task"() {
         given:
         file('settings.gradle') << "include 'a'"
@@ -360,6 +363,7 @@ project(":b") {
         executedAndNotSkipped ":a:yJar"
     }
 
+    @Ignore
     def "reports project dependency that refers to an unknown artifact"() {
         given:
         file('settings.gradle') << """
