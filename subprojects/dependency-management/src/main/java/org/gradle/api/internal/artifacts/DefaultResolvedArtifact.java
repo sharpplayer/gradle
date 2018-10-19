@@ -25,8 +25,8 @@ import org.gradle.api.internal.TaskInternal;
 import org.gradle.api.internal.artifacts.ivyservice.modulecache.dynamicversions.DefaultResolvedModuleVersion;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.artifact.BuildDependenciesVisitor;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.artifact.ResolvableArtifact;
+import org.gradle.api.internal.tasks.AbstractTaskDependencyResolveContext;
 import org.gradle.api.internal.tasks.TaskDependencyContainer;
-import org.gradle.api.internal.tasks.TaskDependencyResolveContext;
 import org.gradle.api.tasks.TaskDependency;
 import org.gradle.internal.Factory;
 import org.gradle.internal.UncheckedException;
@@ -161,7 +161,7 @@ public class DefaultResolvedArtifact implements ResolvedArtifact, ResolvableArti
         return f;
     }
 
-    private class LoggingVisitor implements BuildDependenciesVisitor, TaskDependencyResolveContext {
+    private class LoggingVisitor extends AbstractTaskDependencyResolveContext implements BuildDependenciesVisitor {
         private final BuildDependenciesVisitor visitor;
 
         public LoggingVisitor(BuildDependenciesVisitor visitor) {
@@ -173,7 +173,7 @@ public class DefaultResolvedArtifact implements ResolvedArtifact, ResolvableArti
             if (dep instanceof TaskDependencyContainer) {
                 ((TaskDependencyContainer)dep).visitDependencies(this);
             } else if (dep instanceof TaskInternal) {
-                ((TaskInternal) dep).doLast(new Action<Task>() {
+                ((TaskInternal) dep).appendParallelSafeAction(new Action<Task>() {
                     @Override
                     public void execute(Task task) {
                         // Eagerly calculate the file if this will be used as a dependency of some task
@@ -199,11 +199,6 @@ public class DefaultResolvedArtifact implements ResolvedArtifact, ResolvableArti
         @Override
         public Task getTask() {
             return null;
-        }
-
-        @Override
-        public void maybeAdd(Object dependency) {
-            throw new UnsupportedOperationException();
         }
 
         @Override
