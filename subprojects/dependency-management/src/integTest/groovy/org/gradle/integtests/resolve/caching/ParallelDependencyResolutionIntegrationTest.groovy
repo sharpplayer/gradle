@@ -25,7 +25,7 @@ import spock.lang.IgnoreIf
 @IgnoreIf({ GradleContextualExecuter.parallel })
 // no point, always runs in parallel
 class ParallelDependencyResolutionIntegrationTest extends AbstractHttpDependencyResolutionTest {
-    @Rule BlockingHttpServer server = new BlockingHttpServer()
+    @Rule BlockingHttpServer blockingServer = new BlockingHttpServer()
 
     def setup() {
         executer.withArgument('--parallel')
@@ -147,7 +147,7 @@ class ParallelDependencyResolutionIntegrationTest extends AbstractHttpDependency
     }
 
     def "long running task in producing project does not block task in consuming project"() {
-        server.start()
+        blockingServer.start()
 
         settingsFile << """
             include "producer"
@@ -165,7 +165,7 @@ class ParallelDependencyResolutionIntegrationTest extends AbstractHttpDependency
                 task longRunning {
                     dependsOn producer
                     doLast {
-                        ${server.callFromBuild("longRunning")}
+                        ${blockingServer.callFromBuild("longRunning")}
                     }
                 }
                 artifacts {
@@ -184,14 +184,14 @@ class ParallelDependencyResolutionIntegrationTest extends AbstractHttpDependency
                     outputs.file file("out")
                     dependsOn guard
                     doLast {
-                        ${server.callFromBuild("consumer")}
+                        ${blockingServer.callFromBuild("consumer")}
                     }
                 }
             }
         """
 
         given:
-        server.expectConcurrent("longRunning", "consumer")
+        blockingServer.expectConcurrent("longRunning", "consumer")
 
         expect:
         succeeds("longRunning", "consumer")
