@@ -97,6 +97,16 @@ public class TaskNodeFactory {
         }
 
         @Override
+        public void appendPostAction(Action<? super Task> action) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public Action<? super Task> getPostAction() {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
         public void prepareForExecution() {
             // Should get back some kind of reference that can be queried below instead of looking the task up every time
             taskGraph.addTask(thisBuild, targetBuild, task.getPath());

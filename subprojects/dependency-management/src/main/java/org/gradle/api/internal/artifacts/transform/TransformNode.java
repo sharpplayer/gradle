@@ -159,6 +159,11 @@ public abstract class TransformNode extends Node {
                         }
 
                         @Override
+                        public void attachFinalizerTo(Task task, Action<? super Task> action) {
+                            context.attachFinalizerTo(task, action);
+                        }
+
+                        @Override
                         public void visitFailure(Throwable failure) {
                             throw UncheckedException.throwAsUncheckedException(failure);
                         }

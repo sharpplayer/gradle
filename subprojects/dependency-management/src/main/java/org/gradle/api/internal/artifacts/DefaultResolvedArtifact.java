@@ -171,9 +171,9 @@ public class DefaultResolvedArtifact implements ResolvedArtifact, ResolvableArti
         @Override
         public void visitDependency(Object dep) {
             if (dep instanceof TaskDependencyContainer) {
-                ((TaskDependencyContainer)dep).visitDependencies(this);
+                ((TaskDependencyContainer) dep).visitDependencies(this);
             } else if (dep instanceof TaskInternal) {
-                ((TaskInternal) dep).appendParallelSafeAction(new Action<Task>() {
+                visitor.attachFinalizerTo((Task) dep, new Action<Task>() {
                     @Override
                     public void execute(Task task) {
                         // Eagerly calculate the file if this will be used as a dependency of some task
@@ -187,8 +187,20 @@ public class DefaultResolvedArtifact implements ResolvedArtifact, ResolvableArti
                         }
                     }
                 });
+                visitor.visitDependency(dep);
+            } else {
+                visitor.visitDependency(dep);
             }
-            visitor.visitDependency(dep);
+        }
+
+        @Override
+        public void attachFinalizerTo(Task task, Action<? super Task> action) {
+            visitor.attachFinalizerTo(task, action);
+        }
+
+        @Override
+        public void visitFailure(Throwable failure) {
+            visitor.visitFailure(failure);
         }
 
         @Override
@@ -199,11 +211,6 @@ public class DefaultResolvedArtifact implements ResolvedArtifact, ResolvableArti
         @Override
         public Task getTask() {
             return null;
-        }
-
-        @Override
-        public void visitFailure(Throwable failure) {
-            visitor.visitFailure(failure);
         }
     }
 }

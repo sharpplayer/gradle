@@ -18,6 +18,8 @@ package org.gradle.execution.plan;
 
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Sets;
+import org.gradle.api.Action;
+import org.gradle.api.Task;
 
 import java.util.NavigableSet;
 import java.util.Set;
@@ -111,4 +113,8 @@ public abstract class TaskNode extends Node {
         return getMustSuccessors().contains(successor)
             || getFinalizingSuccessors().contains(successor);
     }
+
+    public abstract void appendPostAction(Action<? super Task> action);
+
+    public abstract Action<? super Task> getPostAction();
 }
