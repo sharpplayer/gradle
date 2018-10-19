@@ -15,13 +15,18 @@
  */
 package org.gradle.api.internal.artifacts;
 
+import org.gradle.api.Action;
+import org.gradle.api.Task;
 import org.gradle.api.artifacts.ModuleVersionIdentifier;
 import org.gradle.api.artifacts.ResolvedArtifact;
 import org.gradle.api.artifacts.ResolvedModuleVersion;
 import org.gradle.api.artifacts.component.ComponentArtifactIdentifier;
+import org.gradle.api.internal.TaskInternal;
 import org.gradle.api.internal.artifacts.ivyservice.modulecache.dynamicversions.DefaultResolvedModuleVersion;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.artifact.BuildDependenciesVisitor;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.artifact.ResolvableArtifact;
+import org.gradle.api.internal.tasks.TaskDependencyContainer;
+import org.gradle.api.internal.tasks.TaskDependencyResolveContext;
 import org.gradle.api.tasks.TaskDependency;
 import org.gradle.internal.Factory;
 import org.gradle.internal.UncheckedException;
@@ -60,15 +65,11 @@ public class DefaultResolvedArtifact implements ResolvedArtifact, ResolvableArti
 
     @Override
     public void collectBuildDependencies(BuildDependenciesVisitor visitor) {
+        LoggingVisitor nested = new LoggingVisitor(visitor);
         if (buildDependencies != null) {
-            visitor.visitDependency(buildDependencies);
+            nested.visitDependency(buildDependencies);
         } else if (sourceArtifact != null) {
-            sourceArtifact.collectBuildDependencies(visitor);
-        }
-        // Eagerly calculate the file if this will be used as a dependency of some task
-        // This is to avoid having to lock the project at execution time
-        if (isResolveSynchronously()) {
-            getFile();
+            sourceArtifact.collectBuildDependencies(nested);
         }
     }
 
@@ -158,5 +159,56 @@ public class DefaultResolvedArtifact implements ResolvedArtifact, ResolvableArti
             }
         }
         return f;
+    }
+
+    private class LoggingVisitor implements BuildDependenciesVisitor, TaskDependencyResolveContext {
+        private final BuildDependenciesVisitor visitor;
+
+        public LoggingVisitor(BuildDependenciesVisitor visitor) {
+            this.visitor = visitor;
+        }
+
+        @Override
+        public void visitDependency(Object dep) {
+            if (dep instanceof TaskDependencyContainer) {
+                ((TaskDependencyContainer)dep).visitDependencies(this);
+            } else if (dep instanceof TaskInternal) {
+                ((TaskInternal) dep).doLast(new Action<Task>() {
+                    @Override
+                    public void execute(Task task) {
+                        // Eagerly calculate the file if this will be used as a dependency of some task
+                        // This is to avoid having to lock the project when a consuming task in another project runs
+                        if (isResolveSynchronously()) {
+                            try {
+                                getFile();
+                            } catch (Exception e) {
+                                // Ignore, this will be reported later
+                            }
+                        }
+                    }
+                });
+            }
+            visitor.visitDependency(dep);
+        }
+
+        @Override
+        public void add(Object dependency) {
+            visitDependency(dependency);
+        }
+
+        @Override
+        public Task getTask() {
+            return null;
+        }
+
+        @Override
+        public void maybeAdd(Object dependency) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void visitFailure(Throwable failure) {
+            visitor.visitFailure(failure);
+        }
     }
 }

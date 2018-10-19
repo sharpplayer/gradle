@@ -30,7 +30,8 @@ import org.gradle.api.internal.artifacts.ivyservice.resolveengine.artifact.Build
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.artifact.BuildableSingleResolvedArtifactSet;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.artifact.ResolvableArtifact;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.artifact.ResolvedArtifactSet;
-import org.gradle.api.internal.tasks.DefaultTaskDependency;
+import org.gradle.api.internal.tasks.TaskDependencyContainer;
+import org.gradle.api.internal.tasks.TaskDependencyResolveContext;
 import org.gradle.execution.plan.Node;
 import org.gradle.execution.plan.TaskDependencyResolver;
 import org.gradle.internal.UncheckedException;
@@ -148,19 +149,22 @@ public abstract class TransformNode extends Node {
         }
 
         private Set<Node> getDependencies(TaskDependencyResolver dependencyResolver) {
-            DefaultTaskDependency deps = new DefaultTaskDependency();
-            artifactSet.collectBuildDependencies(new BuildDependenciesVisitor() {
+            return dependencyResolver.resolveDependenciesFor(null, new TaskDependencyContainer() {
                 @Override
-                public void visitDependency(Object dep) {
-                    deps.add(dep);
-                }
+                public void visitDependencies(TaskDependencyResolveContext context) {
+                    artifactSet.collectBuildDependencies(new BuildDependenciesVisitor() {
+                        @Override
+                        public void visitDependency(Object dep) {
+                            context.add(dep);
+                        }
 
-                @Override
-                public void visitFailure(Throwable failure) {
-                    throw UncheckedException.throwAsUncheckedException(failure);
+                        @Override
+                        public void visitFailure(Throwable failure) {
+                            throw UncheckedException.throwAsUncheckedException(failure);
+                        }
+                    });
                 }
             });
-            return dependencyResolver.resolveDependenciesFor(null, deps);
         }
 
         private class InitialArtifactTransformationStepOperation implements RunnableBuildOperation {

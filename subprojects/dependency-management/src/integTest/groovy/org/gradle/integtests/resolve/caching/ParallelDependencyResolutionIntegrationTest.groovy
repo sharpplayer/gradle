@@ -160,6 +160,7 @@ class ParallelDependencyResolutionIntegrationTest extends AbstractHttpDependency
             project(":producer") {
                 task producer {
                     ext.output = objects.fileProperty()
+                    outputs.file output
                     output.set(file("out"))
                 }
                 task longRunning {
