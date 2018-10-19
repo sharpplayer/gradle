@@ -21,7 +21,9 @@ import org.gradle.api.Project
 import org.gradle.api.file.FileCollection
 import org.gradle.api.internal.TaskInternal
 import org.gradle.api.internal.TaskOutputCachingState
+import org.gradle.api.internal.TaskOutputsInternal
 import org.gradle.api.internal.changedetection.TaskArtifactState
+import org.gradle.api.internal.tasks.DefaultTaskOutputs
 import org.gradle.api.internal.tasks.TaskExecuter
 import org.gradle.api.internal.tasks.TaskExecutionContext
 import org.gradle.api.internal.tasks.TaskExecutionOutcome
@@ -43,10 +45,13 @@ class SkipCachedTaskExecuterTest extends Specification {
     def delegate = Mock(TaskExecuter)
     def project = Mock(Project)
     def projectDir = Mock(File)
-    def taskOutputCaching = Mock(TaskOutputCachingState)
+    def cachingState = Mock(TaskOutputCachingState)
     def localStateFiles = Stub(FileCollection)
     def taskProperties = Mock(TaskProperties)
-    def task = Stub(TaskInternal)
+    def taskOutputs = Mock(TaskOutputsInternal)
+    def task = Stub(TaskInternal) {
+        getOutputs() >> taskOutputs
+    }
     def taskState = Mock(TaskStateInternal)
     def taskContext = Mock(TaskExecutionContext)
     def taskArtifactState = Mock(TaskArtifactState)
@@ -69,8 +74,6 @@ class SkipCachedTaskExecuterTest extends Specification {
         executer.execute(task, taskState, taskContext)
 
         then:
-        1 * taskContext.taskProperties >> taskProperties
-        1 * taskContext.buildCacheKey >> cacheKey
         interaction { cachingEnabled() }
 
         then:
@@ -96,8 +99,6 @@ class SkipCachedTaskExecuterTest extends Specification {
         executer.execute(task, taskState, taskContext)
 
         then:
-        1 * taskContext.taskProperties >> taskProperties
-        1 * taskContext.buildCacheKey >> cacheKey
         interaction { cachingEnabled() }
 
         then:
@@ -118,7 +119,6 @@ class SkipCachedTaskExecuterTest extends Specification {
 
         then:
         1 * taskContext.getExecutionTime() >> 1
-        1 * taskContext.getTaskArtifactState() >> taskArtifactState
         1 * taskArtifactState.getOutputFingerprints() >> outputFingerprints
         1 * buildCacheCommandFactory.createStore(cacheKey, _ as SortedSet<CacheableTree>, outputFingerprints, task, 1) >> storeCommand
 
@@ -132,8 +132,6 @@ class SkipCachedTaskExecuterTest extends Specification {
         executer.execute(task, taskState, taskContext)
 
         then:
-        1 * taskContext.taskProperties >> taskProperties
-        1 * taskContext.buildCacheKey >> cacheKey
         interaction { cachingEnabled() }
 
         then:
@@ -149,7 +147,6 @@ class SkipCachedTaskExecuterTest extends Specification {
 
         then:
         1 * taskContext.getExecutionTime() >> 1
-        1 * taskContext.getTaskArtifactState() >> taskArtifactState
         1 * taskArtifactState.getOutputFingerprints() >> outputFingerprints
         1 * buildCacheCommandFactory.createStore(cacheKey, _ as SortedSet<CacheableTree>, outputFingerprints, task, 1) >> storeCommand
 
@@ -163,8 +160,6 @@ class SkipCachedTaskExecuterTest extends Specification {
         executer.execute(task, taskState, taskContext)
 
         then:
-        1 * taskContext.taskProperties >> taskProperties
-        1 * taskContext.buildCacheKey >> cacheKey
         interaction { cachingEnabled() }
 
         then:
@@ -190,8 +185,6 @@ class SkipCachedTaskExecuterTest extends Specification {
         executer.execute(task, taskState, taskContext)
 
         then:
-        1 * taskContext.taskProperties >> taskProperties
-        1 * taskContext.buildCacheKey >> cacheKey
         interaction { cachingDisabled() }
 
         then:
@@ -204,8 +197,6 @@ class SkipCachedTaskExecuterTest extends Specification {
         executer.execute(task, taskState, taskContext)
 
         then:
-        1 * taskContext.taskProperties >> taskProperties
-        1 * taskContext.buildCacheKey >> cacheKey
         interaction { cachingEnabled() }
 
         then:
@@ -226,7 +217,6 @@ class SkipCachedTaskExecuterTest extends Specification {
 
         then:
         1 * taskContext.getExecutionTime() >> 1
-        1 * taskContext.getTaskArtifactState() >> taskArtifactState
         1 * taskArtifactState.getOutputFingerprints() >> outputFingerprints
         1 * buildCacheCommandFactory.createStore(cacheKey, _ as SortedSet<CacheableTree>, outputFingerprints, task, 1) >> storeCommand
 
@@ -240,8 +230,6 @@ class SkipCachedTaskExecuterTest extends Specification {
         executer.execute(task, taskState, taskContext)
 
         then:
-        1 * taskContext.taskProperties >> taskProperties
-        1 * taskContext.buildCacheKey >> cacheKey
         interaction { cachingEnabled() }
 
         then:
@@ -266,8 +254,6 @@ class SkipCachedTaskExecuterTest extends Specification {
         executer.execute(task, taskState, taskContext)
 
         then:
-        1 * taskContext.taskProperties >> taskProperties
-        1 * taskContext.buildCacheKey >> cacheKey
         interaction { cachingEnabled() }
 
         then:
@@ -289,7 +275,6 @@ class SkipCachedTaskExecuterTest extends Specification {
         then:
         1 * taskContext.getExecutionTime() >> 1
         1 * cacheKey.getDisplayName() >> "cache key"
-        1 * taskContext.getTaskArtifactState() >> taskArtifactState
         1 * taskArtifactState.getOutputFingerprints()
         1 * buildCacheCommandFactory.createStore(*_)
         1 * buildCacheController.store(_) >> { throw new RuntimeException("unknown error") }
@@ -299,12 +284,18 @@ class SkipCachedTaskExecuterTest extends Specification {
     }
 
     private void cachingEnabled() {
-        1 * taskState.getTaskOutputCaching() >> taskOutputCaching
-        1 * taskOutputCaching.isEnabled() >> true
+        _ * taskContext.taskProperties >> taskProperties
+        _ * taskContext.buildCacheKey >> cacheKey
+        1 * buildCacheController.enabled >> true
+        1 * taskOutputs.getCachingState(taskProperties, cacheKey) >> cachingState
+        _ * cachingState.enabled >> true
+        1 * taskState.setTaskOutputCaching(cachingState)
     }
 
     private void cachingDisabled() {
-        1 * taskState.getTaskOutputCaching() >> taskOutputCaching
-        1 * taskOutputCaching.isEnabled() >> false
+        _ * taskContext.taskProperties >> taskProperties
+        _ * taskContext.buildCacheKey >> cacheKey
+        1 * buildCacheController.enabled >> false
+        1 * taskState.setTaskOutputCaching(DefaultTaskOutputs.DISABLED)
     }
 }

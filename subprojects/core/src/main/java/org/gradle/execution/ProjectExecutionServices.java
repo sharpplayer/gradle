@@ -38,7 +38,6 @@ import org.gradle.api.internal.tasks.execution.ExecuteActionsTaskExecuter;
 import org.gradle.api.internal.tasks.execution.FinalizePropertiesTaskExecuter;
 import org.gradle.api.internal.tasks.execution.ResolveBuildCacheKeyExecuter;
 import org.gradle.api.internal.tasks.execution.ResolveTaskArtifactStateTaskExecuter;
-import org.gradle.api.internal.tasks.execution.ResolveTaskOutputCachingStateExecuter;
 import org.gradle.api.internal.tasks.execution.SkipCachedTaskExecuter;
 import org.gradle.api.internal.tasks.execution.SkipEmptySourceFilesTaskExecuter;
 import org.gradle.api.internal.tasks.execution.SkipOnlyIfTaskExecuter;
@@ -137,9 +136,6 @@ public class ProjectExecutionServices extends DefaultServiceRegistry {
                                     WorkExecutor workExecutor
     ) {
 
-        boolean buildCacheEnabled = buildCacheController.isEnabled();
-        boolean scanPluginApplied = buildScanPlugin.isBuildScanPluginApplied();
-
         TaskExecuter executer = new ExecuteActionsTaskExecuter(
             buildOperationExecutor,
             asyncWorkTracker,
@@ -147,17 +143,15 @@ public class ProjectExecutionServices extends DefaultServiceRegistry {
             workExecutor
         );
         executer = new SnapshotAfterExecutionTaskExecuter(executer, buildInvocationScopeId);
-        if (buildCacheEnabled) {
-            executer = new SkipCachedTaskExecuter(
-                buildCacheController,
-                outputChangeListener,
-                commandFactory,
-                executer
-            );
-        }
+        executer = new SkipCachedTaskExecuter(
+            buildCacheController,
+            outputChangeListener,
+            commandFactory,
+            executer
+        );
         executer = new SkipUpToDateTaskExecuter(executer);
-        executer = new ResolveTaskOutputCachingStateExecuter(buildCacheEnabled, executer);
-        if (buildCacheEnabled || scanPluginApplied) {
+        if (buildCacheController.isEnabled()
+                || buildScanPlugin.isBuildScanPluginApplied()) {
             executer = new ResolveBuildCacheKeyExecuter(executer, buildOperationExecutor, buildCacheController.isEmitDebugLogging());
         }
         executer = new ValidatingTaskExecuter(executer);

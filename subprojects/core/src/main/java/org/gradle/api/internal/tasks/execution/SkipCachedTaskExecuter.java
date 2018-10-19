@@ -19,8 +19,11 @@ package org.gradle.api.internal.tasks.execution;
 import com.google.common.collect.ImmutableSortedMap;
 import com.google.common.collect.ImmutableSortedSet;
 import org.gradle.api.internal.TaskInternal;
+import org.gradle.api.internal.TaskOutputCachingState;
+import org.gradle.api.internal.TaskOutputsInternal;
 import org.gradle.api.internal.changedetection.TaskArtifactState;
 import org.gradle.api.internal.tasks.CacheableTaskOutputFilePropertySpec;
+import org.gradle.api.internal.tasks.DefaultTaskOutputs;
 import org.gradle.api.internal.tasks.TaskExecuter;
 import org.gradle.api.internal.tasks.TaskExecutionContext;
 import org.gradle.api.internal.tasks.TaskExecutionOutcome;
@@ -66,74 +69,92 @@ public class SkipCachedTaskExecuter implements TaskExecuter {
 
     @Override
     public void execute(final TaskInternal task, TaskStateInternal state, TaskExecutionContext context) {
+        TaskOutputCachingState cachingState;
+        if (buildCache.isEnabled()) {
+            TaskOutputsInternal outputs = task.getOutputs();
+            cachingState = outputs.getCachingState(context.getTaskProperties(), context.getBuildCacheKey());
+            if (!cachingState.isEnabled()) {
+                LOGGER.info("Caching disabled for {}: {}", task, cachingState.getDisabledReason());
+            }
+        } else {
+            cachingState = DefaultTaskOutputs.DISABLED;
+        }
+        state.setTaskOutputCaching(cachingState);
+        if (cachingState.isEnabled()) {
+            executeWithCache(task, state, context);
+        } else {
+            executeWithoutCache(task, state, context);
+        }
+    }
+
+    private void executeWithCache(final TaskInternal task, TaskStateInternal state, TaskExecutionContext context) {
         LOGGER.debug("Determining if {} is cached already", task);
 
         TaskProperties taskProperties = context.getTaskProperties();
         TaskOutputCachingBuildCacheKey cacheKey = context.getBuildCacheKey();
-        boolean taskOutputCachingEnabled = state.getTaskOutputCaching().isEnabled();
 
-        SortedSet<CacheableTree> outputProperties = null;
-        if (taskOutputCachingEnabled) {
-            if (task.isHasCustomActions()) {
-                LOGGER.info("Custom actions are attached to {}.", task);
-            }
-            final TaskArtifactState taskState = context.getTaskArtifactState();
-            // TODO: This is really something we should do at an earlier/higher level so that the input and output
-            // property values are locked in at this point.
-            outputProperties = resolveProperties(taskProperties.getOutputFileProperties());
-            if (taskState.isAllowedToUseCachedResults()) {
-                try {
-                    OriginMetadata originMetadata = buildCache.load(
-                        commandFactory.createLoad(cacheKey, outputProperties, task, taskProperties.getLocalStateFiles(), new BuildCacheLoadListener() {
-                            @Override
-                            public void beforeLoad() {
-                                outputChangeListener.beforeOutputChange();
-                            }
-
-                            @Override
-                            public void afterLoad(ImmutableSortedMap<String, CurrentFileCollectionFingerprint> snapshots, OriginMetadata originMetadata) {
-                                taskState.snapshotAfterLoadedFromCache(snapshots, originMetadata);
-                            }
-
-                            @Override
-                            public void afterLoad(Throwable error) {
-                                taskState.afterOutputsRemovedBeforeTask();
-                            }
-                        })
-                    );
-                    if (originMetadata != null) {
-                        state.setOutcome(TaskExecutionOutcome.FROM_CACHE);
-                        context.setOriginMetadata(originMetadata);
-                        return;
-                    }
-                } catch (UnrecoverableUnpackingException e) {
-                    // We didn't manage to recover from the unpacking error, there might be leftover
-                    // garbage among the task's outputs, thus we must fail the build
-                    throw e;
-                } catch (Exception e) {
-                    // There was a failure during downloading, previous task outputs should bu unaffected
-                    LOGGER.warn("Failed to load cache entry for {}, falling back to executing task", task, e);
-                }
-            } else {
-                LOGGER.info("Not loading {} from cache because loading from cache is disabled for this task", task);
-            }
+        if (task.isHasCustomActions()) {
+            LOGGER.info("Custom actions are attached to {}.", task);
         }
 
+        final TaskArtifactState taskState = context.getTaskArtifactState();
+        // TODO: This is really something we should do at an earlier/higher level so that the input and output
+        // property values are locked in at this point.
+        SortedSet<CacheableTree> outputProperties = resolveProperties(taskProperties.getOutputFileProperties());
+
+        if (taskState.isAllowedToUseCachedResults()) {
+            try {
+                OriginMetadata originMetadata = buildCache.load(
+                    commandFactory.createLoad(cacheKey, outputProperties, task, taskProperties.getLocalStateFiles(), new BuildCacheLoadListener() {
+                        @Override
+                        public void beforeLoad() {
+                            outputChangeListener.beforeOutputChange();
+                        }
+
+                        @Override
+                        public void afterLoad(ImmutableSortedMap<String, CurrentFileCollectionFingerprint> snapshots, OriginMetadata originMetadata) {
+                            taskState.snapshotAfterLoadedFromCache(snapshots, originMetadata);
+                        }
+
+                        @Override
+                        public void afterLoad(Throwable error) {
+                            taskState.afterOutputsRemovedBeforeTask();
+                        }
+                    })
+                );
+                if (originMetadata != null) {
+                    state.setOutcome(TaskExecutionOutcome.FROM_CACHE);
+                    context.setOriginMetadata(originMetadata);
+                    return;
+                }
+            } catch (UnrecoverableUnpackingException e) {
+                // We didn't manage to recover from the unpacking error, there might be leftover
+                // garbage among the task's outputs, thus we must fail the build
+                throw e;
+            } catch (Exception e) {
+                // There was a failure during downloading, previous task outputs should bu unaffected
+                LOGGER.warn("Failed to load cache entry for {}, falling back to executing task", task, e);
+            }
+        } else {
+            LOGGER.info("Not loading {} from cache because loading from cache is disabled for this task", task);
+        }
+
+        executeWithoutCache(task, state, context);
+
+        if (state.getFailure() == null) {
+            try {
+                Map<String, CurrentFileCollectionFingerprint> outputFingerprints = taskState.getOutputFingerprints();
+                buildCache.store(commandFactory.createStore(cacheKey, outputProperties, outputFingerprints, task, context.getExecutionTime()));
+            } catch (Exception e) {
+                LOGGER.warn("Failed to store cache entry {}", cacheKey.getDisplayName(), e);
+            }
+        } else {
+            LOGGER.debug("Not storing result of {} in cache because the task failed", task);
+        }
+    }
+
+    private void executeWithoutCache(TaskInternal task, TaskStateInternal state, TaskExecutionContext context) {
         delegate.execute(task, state, context);
-
-        if (taskOutputCachingEnabled) {
-            if (state.getFailure() == null) {
-                try {
-                    TaskArtifactState taskState = context.getTaskArtifactState();
-                    Map<String, CurrentFileCollectionFingerprint> outputFingerprints = taskState.getOutputFingerprints();
-                    buildCache.store(commandFactory.createStore(cacheKey, outputProperties, outputFingerprints, task, context.getExecutionTime()));
-                } catch (Exception e) {
-                    LOGGER.warn("Failed to store cache entry {}", cacheKey.getDisplayName(), e);
-                }
-            } else {
-                LOGGER.debug("Not storing result of {} in cache because the task failed", task);
-            }
-        }
     }
 
     private static SortedSet<CacheableTree> resolveProperties(ImmutableSortedSet<? extends TaskOutputFilePropertySpec> properties) {
